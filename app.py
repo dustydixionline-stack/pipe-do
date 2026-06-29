@@ -285,9 +285,9 @@ with col_form:
 
     # Admin peut choisir pour quel commercial
     if is_admin:
-        users_map    = get_users()
-        noms_co      = ["Dusty", users_map["commercial"]["display_name"]]
-        assigned_to  = st.selectbox("Assigner à", noms_co, key="f_assign")
+        users_map   = get_users()
+        noms_co     = [u["display_name"] for u in users_map.values()]
+        assigned_to = st.selectbox("Assigner à", noms_co, key="f_assign")
     else:
         assigned_to = user["display_name"]
 
