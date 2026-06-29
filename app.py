@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-import folium
-from streamlit_folium import st_folium
+import plotly.graph_objects as go
 from datetime import datetime
 
 st.set_page_config(page_title="Pipe DO — Dixionline", page_icon="🎯", layout="wide")
@@ -27,8 +26,6 @@ OFFRES = {
 TYPE_CONTACT = ["Prospect", "Client"]
 STATUTS      = ["Premier contact", "Devis présenté", "Relance", "Gagné", "Perdu"]
 PROBA        = {"Chaud": 0.80, "Tiède": 0.40, "Froid": 0.10}
-COULEURS     = {"Chaud": "red", "Tiède": "orange", "Froid": "blue"}
-
 VILLES = {
     "Montpellier": [43.6108, 3.8767], "Béziers": [43.3444, 3.2158],
     "Sète": [43.4027, 3.6958], "Agde": [43.3108, 3.4752],
@@ -208,11 +205,58 @@ def fmt_eur(val):
         return "— €"
 
 
-def get_coords(ville):
-    for k, v in VILLES.items():
-        if k.lower() == ville.strip().lower():
-            return v
-    return None
+# ── Graphique répartition par offre ──────────────────────────────────────────
+CAT_COLORS = {
+    "Sites":   "#534AB7",
+    "Digital": "#1D9E75",
+    "Packs":   "#BA7517",
+    "Image":   "#D4537E",
+    "Service": "#888780",
+    "Autre":   "#888780",
+}
+
+def make_offre_chart(df):
+    if df.empty:
+        return None
+    totals = df.groupby("offre")["montant_total"].sum().reset_index()
+    totals = totals.sort_values("montant_total", ascending=True)
+    total_global = totals["montant_total"].sum()
+
+    def cat_color(offre_name):
+        cat = OFFRES.get(offre_name, {}).get("cat", "Autre")
+        return CAT_COLORS.get(cat, "#888780")
+
+    colors = [cat_color(o) for o in totals["offre"]]
+    pcts   = [f"{int(v / total_global * 100)}%" if total_global > 0 else "0%"
+              for v in totals["montant_total"]]
+
+    fig = go.Figure(go.Bar(
+        x=totals["montant_total"],
+        y=totals["offre"],
+        orientation="h",
+        marker_color=colors,
+        marker_line_width=0,
+        text=pcts,
+        textposition="inside",
+        textfont=dict(color="white", size=11),
+        hovertemplate="%{y}<br><b>%{x:,.0f} €</b><extra></extra>",
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=60, t=10, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=380,
+        xaxis=dict(
+            showgrid=True, gridcolor="rgba(128,128,128,0.12)",
+            tickformat=",", ticksuffix=" €", title=None,
+            tickfont=dict(size=11),
+        ),
+        yaxis=dict(showgrid=False, title=None, tickfont=dict(size=12)),
+        showlegend=False,
+        font=dict(family="system-ui, sans-serif"),
+        bargap=0.25,
+    )
+    return fig
 
 
 # ── Chargement + filtre rôle ──────────────────────────────────────────────────
@@ -387,50 +431,23 @@ with col_form:
                     del st.session_state[k]
             st.rerun()
 
-    st.markdown(
-        '<div style="font-size:13px;color:#888;margin-top:4px">'
-        '🔴&nbsp;&nbsp;🟠&nbsp;&nbsp;🔵'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
 with col_map:
-    st.subheader("Carte des opportunités")
-    m = folium.Map(location=[43.65, 4.20], zoom_start=8, tiles="CartoDB positron")
-
-    if not df.empty:
-        not_found = []
-        for _, row in df.iterrows():
-            coords = get_coords(row["ville"])
-            if coords:
-                couleur = COULEURS.get(row["temperature"], "gray")
-                fms_m   = float(row.get("fms_montant", 0))
-                total_v = float(row.get("montant_total", row["montant_brut"]))
-                tc      = row.get("type_contact", "Prospect")
-                co      = row.get("commercial", "—")
-                popup_html = (
-                    f"<b>{row['client']}</b> "
-                    f"<span style='background:#333;padding:1px 5px;border-radius:3px;"
-                    f"font-size:0.8em'>{tc}</span><br>"
-                    f"🧑 {co} · {row['ville']}<br>"
-                    f"{row['offre']}<br>"
-                    f"{fmt_eur(row['montant_brut'])} + FMS {fmt_eur(fms_m)} = <b>{fmt_eur(total_v)}</b><br>"
-                    f"→ {fmt_eur(row['montant_pondere'])} pondéré<br>"
-                    f"<span style='color:{couleur}'>● {row['temperature']}</span> | {row['statut']}"
-                )
-                folium.CircleMarker(
-                    location=coords, radius=11,
-                    color="white", weight=2,
-                    fill=True, fill_color=couleur, fill_opacity=0.85,
-                    popup=folium.Popup(popup_html, max_width=290),
-                    tooltip=f"{row['client']} — {row['ville']} ({co})",
-                ).add_to(m)
-            else:
-                not_found.append(row["ville"])
-        if not_found:
-            st.caption(f"⚠️ Villes non géolocalisées : {', '.join(set(not_found))}")
-
-    st_folium(m, width=None, height=430, use_container_width=True)
+    st.subheader("Répartition par offre")
+    fig = make_offre_chart(df)
+    if fig:
+        cat_legend = [
+            ("Sites", "#534AB7"), ("Digital", "#1D9E75"),
+            ("Packs", "#BA7517"), ("Image", "#D4537E"), ("Service / Autre", "#888780"),
+        ]
+        legend_html = " &nbsp; ".join(
+            f'<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#888">'
+            f'<span style="width:9px;height:9px;border-radius:2px;background:{c};display:inline-block"></span>{lbl}</span>'
+            for lbl, c in cat_legend
+        )
+        st.markdown(legend_html, unsafe_allow_html=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.info("Aucune opportunité pour afficher le graphique.")
 
 st.divider()
 
