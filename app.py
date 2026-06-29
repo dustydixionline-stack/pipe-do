@@ -510,7 +510,9 @@ with tab_table:
             except Exception:
                 return "—"
 
+        TEMP_EMOJI = {"Chaud": "🔴", "Tiède": "🟠", "Froid": "🔵"}
         df_show["FMS"]             = df_show.apply(fms_label, axis=1)
+        df_show["temperature"]     = df_show["temperature"].map(TEMP_EMOJI).fillna("⚪")
         df_show["montant_brut"]    = df_show["montant_brut"].apply(fmt_eur)
         df_show["montant_total"]   = df_show["montant_total"].apply(fmt_eur)
         df_show["probabilite"]     = df_show["probabilite"].apply(lambda x: f"{int(x)} %")
