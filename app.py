@@ -86,25 +86,24 @@ COLUMNS   = [
 # ── Auth ──────────────────────────────────────────────────────────────────────
 def get_users():
     try:
-        nom_co = st.secrets.get("NOM_COMMERCIAL", "Commercial")
         return {
-            "dusty": {
+            "dusty.dixionline@gmail.com": {
                 "password":     st.secrets.get("PASSWORD_DUSTY", "admin"),
                 "role":         "admin",
                 "display_name": "Dusty",
                 "label":        "Dir. Commercial",
             },
-            "commercial": {
+            "hugo.dixionline@gmail.com": {
                 "password":     st.secrets.get("PASSWORD_COMMERCIAL", "commercial"),
                 "role":         "commercial",
-                "display_name": nom_co,
+                "display_name": "Hugo",
                 "label":        "Commercial",
             },
         }
     except Exception:
         return {
-            "dusty":      {"password": "admin",      "role": "admin",      "display_name": "Dusty",      "label": "Dir. Commercial"},
-            "commercial": {"password": "commercial", "role": "commercial", "display_name": "Commercial", "label": "Commercial"},
+            "dusty.dixionline@gmail.com": {"password": "admin",      "role": "admin",      "display_name": "Dusty", "label": "Dir. Commercial"},
+            "hugo.dixionline@gmail.com":  {"password": "commercial", "role": "commercial", "display_name": "Hugo",  "label": "Commercial"},
         }
 
 
@@ -115,7 +114,7 @@ def login_page():
         st.markdown("## 🎯 Pipe Commercial\n### Dixionline")
         st.markdown("<br>", unsafe_allow_html=True)
         with st.form("login"):
-            username = st.text_input("Identifiant")
+            username = st.text_input("Adresse email")
             password = st.text_input("Mot de passe", type="password")
             ok = st.form_submit_button("Connexion", type="primary", use_container_width=True)
         if ok:
