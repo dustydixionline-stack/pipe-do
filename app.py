@@ -57,6 +57,7 @@ VILLES = {
     "Cavaillon": [43.8347, 5.0378], "L'Isle-sur-la-Sorgue": [43.9183, 5.0492],
     "Pertuis": [43.6950, 5.5028], "Vaison-la-Romaine": [44.2428, 5.0703],
     "Bollène": [44.2819, 4.7472], "Sorgues": [44.0058, 4.8719],
+    "Jacou": [43.6623, 3.9241], "Poulx": [43.8806, 4.3778], "Codognan": [43.7167, 4.2333],
     "Paris": [48.8566, 2.3522], "Lyon": [45.7640, 4.8357],
     "Toulouse": [43.6047, 1.4442], "Nice": [43.7102, 7.2620],
     "Bordeaux": [44.8378, -0.5792], "Grenoble": [45.1885, 5.7245],
@@ -89,6 +90,7 @@ COLUMNS   = [
     "id", "client", "ville", "type_contact", "offre", "statut", "temperature",
     "montant_brut", "fms_inclus", "fms_montant", "montant_total",
     "probabilite", "montant_pondere", "commercial", "date_creation",
+    "date_dernier_echange",
 ]
 
 
@@ -308,6 +310,11 @@ with col_form:
     else:
         fms_inclus = False
 
+    # Date dernier échange
+    date_echange = st.date_input("Date du dernier échange", value=None,
+                                  key="f_date_echange",
+                                  help="Laisser vide si pas encore d'échange")
+
     # Admin peut choisir pour quel commercial
     if is_admin:
         users_map   = get_users()
@@ -362,8 +369,9 @@ with col_form:
                 "montant_total": total,
                 "probabilite":   int(proba * 100),
                 "montant_pondere": pondere,
-                "commercial":    assigned_to,
-                "date_creation": datetime.today().strftime("%Y-%m-%d"),
+                "commercial":           assigned_to,
+                "date_creation":        datetime.today().strftime("%Y-%m-%d"),
+                "date_dernier_echange": date_echange.strftime("%Y-%m-%d") if date_echange else None,
             }
             insert_row(row)
             gc = " *(FMS offerts 🤝)*" if not fms_inclus and fms_ref_val > 0 else ""
@@ -526,8 +534,9 @@ with tab_table:
             "commercial": "Commercial", "date_creation": "Date",
         })
 
+        df_show = df_show.rename(columns={"date_dernier_echange": "Dernier échange"})
         base_cols  = ["Client", "Ville", "Type", "Offre", "FMS", "Prix HT", "Total HT",
-                      "Temp.", "Proba.", "Pondéré", "Statut", "Date"]
+                      "Temp.", "Proba.", "Pondéré", "Statut", "Date", "Dernier échange"]
         show_cols  = (["Commercial"] + base_cols) if is_admin else base_cols
         final_cols = [c for c in show_cols if c in df_show.columns]
         st.dataframe(df_show[final_cols], use_container_width=True, hide_index=True)
@@ -548,84 +557,92 @@ with tab_table:
             idx     = edit_labels.index(edit_choice)
             erow    = df.iloc[idx]
             erow_id = int(erow["id"])
+            kp      = f"ed_{erow_id}"   # préfixe clé unique par ligne
 
             is_custom_offre = erow["offre"] not in OFFRES
             offre_options   = list(OFFRES.keys())
 
-            with st.form(f"form_edit_{erow_id}"):
-                ec1, ec2 = st.columns(2)
-                e_client = ec1.text_input("Client",  value=erow["client"])
-                e_ville  = ec2.text_input("Ville",   value=erow["ville"])
+            ec1, ec2 = st.columns(2)
+            e_client = ec1.text_input("Client", value=erow["client"], key=f"{kp}_client")
+            e_ville  = ec2.text_input("Ville",  value=erow["ville"],  key=f"{kp}_ville")
 
-                ec3, ec4 = st.columns(2)
-                e_type  = ec3.selectbox("Type", TYPE_CONTACT,
-                    index=TYPE_CONTACT.index(erow["type_contact"]) if erow["type_contact"] in TYPE_CONTACT else 0)
-                e_statut = ec4.selectbox("Statut", STATUTS,
-                    index=STATUTS.index(erow["statut"]) if erow["statut"] in STATUTS else 0)
+            ec3, ec4 = st.columns(2)
+            e_type = ec3.selectbox("Type", TYPE_CONTACT, key=f"{kp}_type",
+                index=TYPE_CONTACT.index(erow["type_contact"]) if erow["type_contact"] in TYPE_CONTACT else 0)
+            e_statut = ec4.selectbox("Statut", STATUTS, key=f"{kp}_statut",
+                index=STATUTS.index(erow["statut"]) if erow["statut"] in STATUTS else 0)
 
-                if is_custom_offre:
-                    st.markdown(f"**Prestation :** {erow['offre']}")
-                    e_offre      = OFFRE_CUSTOM
-                    e_custom_nom = erow["offre"]
-                    e_brut       = st.number_input("Montant HT (€)", min_value=0, step=50,
-                                                    value=int(float(erow["montant_brut"])))
-                    e_fms        = False
-                else:
-                    offre_idx = offre_options.index(erow["offre"]) if erow["offre"] in offre_options else 0
-                    e_offre      = st.selectbox("Proposition de valeur", offre_options, index=offre_idx)
-                    e_custom_nom = ""
-                    e_brut       = OFFRES[e_offre]["prix"]
-                    fms_ref      = OFFRES[e_offre]["fms"]
-                    e_fms = st.checkbox(f"Inclure FMS ({fmt_eur(fms_ref)})",
-                                        value=bool(erow.get("fms_inclus", False))) if fms_ref > 0 else False
+            if is_custom_offre:
+                st.markdown(f"**Prestation :** {erow['offre']}")
+                e_offre      = OFFRE_CUSTOM
+                e_custom_nom = erow["offre"]
+                e_brut       = st.number_input("Montant HT (€)", min_value=0, step=50,
+                                               value=int(float(erow["montant_brut"])), key=f"{kp}_brut")
+                e_fms        = False
+                fms_ref_val  = 0
+            else:
+                offre_idx    = offre_options.index(erow["offre"]) if erow["offre"] in offre_options else 0
+                e_offre      = st.selectbox("Proposition de valeur", offre_options,
+                                            index=offre_idx, key=f"{kp}_offre")
+                e_custom_nom = ""
+                e_brut       = OFFRES[e_offre]["prix"]
+                fms_ref_val  = OFFRES[e_offre]["fms"]
+                e_fms        = st.checkbox(f"Inclure FMS ({fmt_eur(fms_ref_val)})",
+                                           value=bool(erow.get("fms_inclus", False)),
+                                           key=f"{kp}_fms") if fms_ref_val > 0 else False
 
-                temp_list = list(PROBA.keys())
-                e_temp = st.selectbox("Température", temp_list,
-                    index=temp_list.index(erow["temperature"]) if erow["temperature"] in temp_list else 0)
+            temp_list = list(PROBA.keys())
+            e_temp = st.selectbox("Température", temp_list, key=f"{kp}_temp",
+                index=temp_list.index(erow["temperature"]) if erow["temperature"] in temp_list else 0)
 
-                if is_admin:
-                    users_map_e = get_users()
-                    noms_co_e   = [u["display_name"] for u in users_map_e.values()]
-                    co_idx      = noms_co_e.index(erow["commercial"]) if erow["commercial"] in noms_co_e else 0
-                    e_co        = st.selectbox("Commercial", noms_co_e, index=co_idx)
-                else:
-                    e_co = user["display_name"]
+            if is_admin:
+                users_map_e = get_users()
+                noms_co_e   = [u["display_name"] for u in users_map_e.values()]
+                co_idx      = noms_co_e.index(erow["commercial"]) if erow["commercial"] in noms_co_e else 0
+                e_co        = st.selectbox("Commercial", noms_co_e, index=co_idx, key=f"{kp}_co")
+            else:
+                e_co = user["display_name"]
 
-                save_btn = st.form_submit_button("💾 Enregistrer", type="primary", use_container_width=True)
+            existing_date = erow.get("date_dernier_echange")
+            try:
+                from datetime import date as _date
+                pre_date = _date.fromisoformat(str(existing_date)) if existing_date and str(existing_date) != "nan" else None
+            except Exception:
+                pre_date = None
+            e_date_echange = st.date_input("Date du dernier échange", value=pre_date,
+                                            key=f"{kp}_date_echange",
+                                            help="Laisser vide si pas encore d'échange")
 
-            if save_btn:
-                if is_custom_offre:
-                    offre_label = e_custom_nom
-                    brut        = float(e_brut)
-                    fms_ref_val = 0
-                    e_fms       = False
-                else:
-                    offre_label = e_offre
-                    brut        = float(OFFRES[e_offre]["prix"])
-                    fms_ref_val = OFFRES[e_offre]["fms"]
+            if st.button("💾 Enregistrer les modifications", type="primary",
+                         use_container_width=True, key=f"{kp}_save"):
+                try:
+                    offre_label = e_custom_nom if is_custom_offre else e_offre
+                    brut        = float(e_brut) if is_custom_offre else float(OFFRES[e_offre]["prix"])
+                    fms_montant = fms_ref_val if e_fms else 0
+                    total       = brut + fms_montant
+                    proba       = PROBA[e_temp]
+                    pondere     = round(total * proba, 2)
 
-                fms_montant = fms_ref_val if e_fms else 0
-                total       = brut + fms_montant
-                proba       = PROBA[e_temp]
-                pondere     = round(total * proba, 2)
-
-                update_row(erow_id, {
-                    "client":           e_client.strip(),
-                    "ville":            e_ville.strip(),
-                    "type_contact":     e_type,
-                    "offre":            offre_label,
-                    "statut":           e_statut,
-                    "temperature":      e_temp,
-                    "montant_brut":     brut,
-                    "fms_inclus":       e_fms,
-                    "fms_montant":      fms_montant,
-                    "montant_total":    total,
-                    "probabilite":      int(proba * 100),
-                    "montant_pondere":  pondere,
-                    "commercial":       e_co,
-                })
-                st.success("Modifications enregistrées !")
-                st.rerun()
+                    update_row(erow_id, {
+                        "client":               e_client.strip(),
+                        "ville":                e_ville.strip(),
+                        "type_contact":         e_type,
+                        "offre":                offre_label,
+                        "statut":               e_statut,
+                        "temperature":          e_temp,
+                        "montant_brut":         brut,
+                        "fms_inclus":           e_fms,
+                        "fms_montant":          fms_montant,
+                        "montant_total":        total,
+                        "probabilite":          int(proba * 100),
+                        "montant_pondere":      pondere,
+                        "commercial":           e_co,
+                        "date_dernier_echange": e_date_echange.strftime("%Y-%m-%d") if e_date_echange else None,
+                    })
+                    st.success("✅ Modifications enregistrées !")
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Erreur : {ex}")
 
         st.divider()
 
