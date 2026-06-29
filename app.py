@@ -222,15 +222,19 @@ with h2:
         st.rerun()
 
 # ── KPIs ──────────────────────────────────────────────────────────────────────
-pipe_pondere    = df["montant_pondere"].sum()  if not df.empty else 0
-premier_contact = len(df[df["statut"] == "Premier contact"]) if not df.empty else 0
-chaud_montant   = df[df["temperature"] == "Chaud"]["montant_total"].sum() if not df.empty else 0
+pipe_pondere   = df["montant_pondere"].sum() if not df.empty else 0
+ca_gagne       = df[df["statut"] == "Gagné"]["montant_total"].sum() if not df.empty else 0
+a_relancer     = len(df[df["statut"] == "Relance"]) if not df.empty else 0
+actifs         = len(df[~df["statut"].isin(["Gagné", "Perdu"])]) if not df.empty else 0
+chaud_montant  = df[df["temperature"] == "Chaud"]["montant_total"].sum() if not df.empty else 0
 
 scope_label = "équipe" if is_admin else user["display_name"]
-k1, k2, k3 = st.columns(3)
-k1.metric(f"💰 Pipe pondéré ({scope_label})",       fmt_eur(pipe_pondere))
-k2.metric("📋 Dossiers Premier contact",            premier_contact)
-k3.metric("🔥 Montant opportunités Chaudes",        fmt_eur(chaud_montant))
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric(f"💰 Pipe pondéré ({scope_label})", fmt_eur(pipe_pondere))
+k2.metric("✅ CA Gagné",                      fmt_eur(ca_gagne))
+k3.metric("🔔 Dossiers à relancer",           a_relancer)
+k4.metric("📂 Dossiers actifs",               actifs)
+k5.metric("🔥 Opportunités Chaudes",          fmt_eur(chaud_montant))
 
 # Vue consolidée admin : répartition par commercial
 if is_admin and not df_all.empty and "commercial" in df_all.columns:
