@@ -412,67 +412,123 @@ with col_map:
 
 st.divider()
 
-# ── Tableau ───────────────────────────────────────────────────────────────────
-st.subheader("Tableau des opportunités" + (" — Vue équipe" if is_admin else f" — {user['display_name']}"))
+# ── Pipeline + Tableau ────────────────────────────────────────────────────────
+scope_title = "Vue équipe" if is_admin else user["display_name"]
+st.subheader(f"Opportunités — {scope_title}")
 
-if df.empty:
-    st.info("Aucune opportunité. Utilisez le formulaire pour commencer.")
-else:
-    df_show = df.copy()
+tab_pipe, tab_table = st.tabs(["📋  Pipeline", "📊  Tableau"])
 
-    def fms_label(r):
-        try:
-            val = float(r.get("fms_montant", 0))
-            if val > 0:
-                return f"✅ {fmt_eur(val)}"
-            fms_ref_val = OFFRES.get(r["offre"], {}).get("fms", 0)
-            if fms_ref_val > 0:
-                return "🤝 Offerts"
-            return "—"
-        except Exception:
-            return "—"
+# ── Onglet Kanban ─────────────────────────────────────────────────────────────
+with tab_pipe:
+    KANBAN_STATUTS = ["Premier contact", "Devis présenté", "Relance", "Gagné", "Perdu"]
+    KANBAN_STYLE = {
+        "Premier contact": {"bg": "#E6F1FB", "color": "#0C447C",  "icon": "📞"},
+        "Devis présenté":  {"bg": "#EEEDFE", "color": "#3C3489",  "icon": "📄"},
+        "Relance":         {"bg": "#FAEEDA", "color": "#633806",  "icon": "🔔"},
+        "Gagné":           {"bg": "#EAF3DE", "color": "#27500A",  "icon": "✅"},
+        "Perdu":           {"bg": "#FCEBEB", "color": "#791F1F",  "icon": "❌"},
+    }
+    TEMP_BADGE = {
+        "Chaud": ("#FAECE7", "#993C1D"),
+        "Tiède": ("#FAEEDA", "#854F0B"),
+        "Froid": ("#E6F1FB", "#185FA5"),
+    }
 
-    df_show["FMS"]             = df_show.apply(fms_label, axis=1)
-    df_show["montant_brut"]    = df_show["montant_brut"].apply(fmt_eur)
-    df_show["montant_total"]   = df_show["montant_total"].apply(fmt_eur)
-    df_show["probabilite"]     = df_show["probabilite"].apply(lambda x: f"{int(x)} %")
-    df_show["montant_pondere"] = df_show["montant_pondere"].apply(fmt_eur)
+    cols_kb = st.columns(5)
+    for col_kb, statut in zip(cols_kb, KANBAN_STATUTS):
+        s      = KANBAN_STYLE[statut]
+        df_col = df[df["statut"] == statut] if not df.empty else pd.DataFrame()
+        count  = len(df_col)
+        with col_kb:
+            st.markdown(
+                f'<div style="background:{s["bg"]};color:{s["color"]};font-size:12px;font-weight:500;'
+                f'padding:6px 8px;border-radius:8px;text-align:center;margin-bottom:8px">'
+                f'{s["icon"]} {statut} <span style="opacity:.6">({count})</span></div>',
+                unsafe_allow_html=True,
+            )
+            if df_col.empty:
+                st.markdown(
+                    '<div style="font-size:11px;color:#999;text-align:center;padding:14px 0">—</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                for _, row in df_col.iterrows():
+                    temp          = row.get("temperature", "Froid")
+                    bg_t, color_t = TEMP_BADGE.get(temp, ("#f0f0f0", "#555"))
+                    co            = row.get("commercial", "—")
+                    st.markdown(
+                        f'<div style="background:white;border:0.5px solid #e0e0e0;border-radius:10px;'
+                        f'padding:10px 11px;margin-bottom:8px">'
+                        f'<div style="font-size:13px;font-weight:500;color:#111;margin-bottom:3px">{row["client"]}</div>'
+                        f'<div style="font-size:10px;color:#666;margin-bottom:6px">{row["offre"]}</div>'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'
+                        f'<span style="font-size:12px;font-weight:500;color:#111">{fmt_eur(row["montant_total"])}</span>'
+                        f'<span style="font-size:10px;padding:2px 6px;border-radius:20px;'
+                        f'background:{bg_t};color:{color_t}">{temp}</span>'
+                        f'</div>'
+                        f'<div style="font-size:10px;color:#999">👤 {co} · {row["ville"]}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
-    df_show = df_show.rename(columns={
-        "client": "Client", "ville": "Ville", "type_contact": "Type",
-        "offre": "Offre", "statut": "Statut", "temperature": "Temp.",
-        "montant_brut": "Prix HT", "montant_total": "Total HT",
-        "probabilite": "Proba.", "montant_pondere": "Pondéré",
-        "commercial": "Commercial", "date_creation": "Date",
-    })
-
-    base_cols  = ["Client", "Ville", "Type", "Offre", "FMS", "Prix HT", "Total HT",
-                  "Temp.", "Proba.", "Pondéré", "Statut", "Date"]
-    show_cols  = (["Commercial"] + base_cols) if is_admin else base_cols
-    final_cols = [c for c in show_cols if c in df_show.columns]
-    st.dataframe(df_show[final_cols], use_container_width=True, hide_index=True)
-
-    # ── Suppression ──────────────────────────────────────────────────────────
-    st.subheader("Supprimer une opportunité")
-
-    if is_admin:
-        deletable = df
+# ── Onglet Tableau ────────────────────────────────────────────────────────────
+with tab_table:
+    if df.empty:
+        st.info("Aucune opportunité. Utilisez le formulaire pour commencer.")
     else:
-        # Commercial ne peut supprimer que ses propres entrées
-        deletable = df[df.get("commercial", pd.Series(dtype=str)) == user["display_name"]]
+        df_show = df.copy()
 
-    if deletable.empty:
-        st.caption("Aucune opportunité à supprimer.")
-    else:
-        labels = [
-            f"#{int(r['id'])} — {r['client']} ({r['ville']}) · {r.get('commercial','')}"
-            for _, r in deletable.iterrows()
-        ]
-        id_map = {lbl: int(r["id"]) for lbl, (_, r) in zip(labels, deletable.iterrows())}
-        choix  = st.selectbox("Sélectionner", ["— Choisir —"] + labels,
-                              label_visibility="collapsed")
-        if choix != "— Choisir —":
-            if st.button("🗑️ Supprimer cette opportunité", type="secondary"):
-                delete_row(id_map[choix])
-                st.success("Opportunité supprimée.")
-                st.rerun()
+        def fms_label(r):
+            try:
+                val = float(r.get("fms_montant", 0))
+                if val > 0:
+                    return f"✅ {fmt_eur(val)}"
+                fms_ref_val = OFFRES.get(r["offre"], {}).get("fms", 0)
+                if fms_ref_val > 0:
+                    return "🤝 Offerts"
+                return "—"
+            except Exception:
+                return "—"
+
+        df_show["FMS"]             = df_show.apply(fms_label, axis=1)
+        df_show["montant_brut"]    = df_show["montant_brut"].apply(fmt_eur)
+        df_show["montant_total"]   = df_show["montant_total"].apply(fmt_eur)
+        df_show["probabilite"]     = df_show["probabilite"].apply(lambda x: f"{int(x)} %")
+        df_show["montant_pondere"] = df_show["montant_pondere"].apply(fmt_eur)
+
+        df_show = df_show.rename(columns={
+            "client": "Client", "ville": "Ville", "type_contact": "Type",
+            "offre": "Offre", "statut": "Statut", "temperature": "Temp.",
+            "montant_brut": "Prix HT", "montant_total": "Total HT",
+            "probabilite": "Proba.", "montant_pondere": "Pondéré",
+            "commercial": "Commercial", "date_creation": "Date",
+        })
+
+        base_cols  = ["Client", "Ville", "Type", "Offre", "FMS", "Prix HT", "Total HT",
+                      "Temp.", "Proba.", "Pondéré", "Statut", "Date"]
+        show_cols  = (["Commercial"] + base_cols) if is_admin else base_cols
+        final_cols = [c for c in show_cols if c in df_show.columns]
+        st.dataframe(df_show[final_cols], use_container_width=True, hide_index=True)
+
+        st.subheader("Supprimer une opportunité")
+
+        if is_admin:
+            deletable = df
+        else:
+            deletable = df[df.get("commercial", pd.Series(dtype=str)) == user["display_name"]]
+
+        if deletable.empty:
+            st.caption("Aucune opportunité à supprimer.")
+        else:
+            labels = [
+                f"#{int(r['id'])} — {r['client']} ({r['ville']}) · {r.get('commercial','')}"
+                for _, r in deletable.iterrows()
+            ]
+            id_map = {lbl: int(r["id"]) for lbl, (_, r) in zip(labels, deletable.iterrows())}
+            choix  = st.selectbox("Sélectionner", ["— Choisir —"] + labels,
+                                  label_visibility="collapsed")
+            if choix != "— Choisir —":
+                if st.button("🗑️ Supprimer cette opportunité", type="secondary"):
+                    delete_row(id_map[choix])
+                    st.success("Opportunité supprimée.")
+                    st.rerun()
