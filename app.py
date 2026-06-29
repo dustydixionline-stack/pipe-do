@@ -186,6 +186,16 @@ def delete_row(row_id: int):
         df[df["id"] != row_id].to_csv(DATA_FILE, index=False)
 
 
+def update_row(row_id: int, data: dict):
+    if USE_SUPA:
+        supabase.table("pipe_do").update(data).eq("id", row_id).execute()
+    else:
+        df = load_data()
+        for k, v in data.items():
+            df.loc[df["id"] == row_id, k] = v
+        df.to_csv(DATA_FILE, index=False)
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def fmt_eur(val):
     try:
@@ -367,10 +377,12 @@ with col_form:
                     del st.session_state[k]
             st.rerun()
 
-    st.markdown("""
-**Légende carte**
-🔴 Chaud (80 %)&nbsp;|&nbsp;🟠 Tiède (40 %)&nbsp;|&nbsp;🔵 Froid (10 %)
-""")
+    st.markdown(
+        '<div style="font-size:13px;color:#888;margin-top:4px">'
+        '🔴&nbsp;&nbsp;🟠&nbsp;&nbsp;🔵'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 with col_map:
     st.subheader("Carte des opportunités")
@@ -419,7 +431,14 @@ st.subheader(f"Opportunités — {scope_title}")
 tab_pipe, tab_table = st.tabs(["📋  Pipeline", "📊  Tableau"])
 
 # ── Onglet Kanban ─────────────────────────────────────────────────────────────
+LEGENDE_TEMP = (
+    '<div style="font-size:12px;color:#888;margin-bottom:10px">'
+    '🔴&nbsp;&nbsp;🟠&nbsp;&nbsp;🔵'
+    '</div>'
+)
+
 with tab_pipe:
+    st.markdown(LEGENDE_TEMP, unsafe_allow_html=True)
     KANBAN_STATUTS = ["Premier contact", "Devis présenté", "Relance", "Gagné", "Perdu"]
     KANBAN_STYLE = {
         "Premier contact": {"bg": "#E6F1FB", "color": "#0C447C",  "icon": "📞"},
@@ -473,6 +492,7 @@ with tab_pipe:
 
 # ── Onglet Tableau ────────────────────────────────────────────────────────────
 with tab_table:
+    st.markdown(LEGENDE_TEMP, unsafe_allow_html=True)
     if df.empty:
         st.info("Aucune opportunité. Utilisez le formulaire pour commencer.")
     else:
@@ -510,6 +530,104 @@ with tab_table:
         final_cols = [c for c in show_cols if c in df_show.columns]
         st.dataframe(df_show[final_cols], use_container_width=True, hide_index=True)
 
+        # ── Modifier ─────────────────────────────────────────────────────────
+        st.subheader("Modifier une opportunité")
+
+        edit_labels = [
+            f"#{int(r['id'])} — {r['client']} ({r['ville']})"
+            for _, r in df.iterrows()
+        ]
+        edit_choice = st.selectbox(
+            "Sélectionner", ["— Choisir —"] + edit_labels,
+            key="edit_select", label_visibility="collapsed"
+        )
+
+        if edit_choice != "— Choisir —":
+            idx     = edit_labels.index(edit_choice)
+            erow    = df.iloc[idx]
+            erow_id = int(erow["id"])
+
+            is_custom_offre = erow["offre"] not in OFFRES
+            offre_options   = list(OFFRES.keys())
+
+            with st.form(f"form_edit_{erow_id}"):
+                ec1, ec2 = st.columns(2)
+                e_client = ec1.text_input("Client",  value=erow["client"])
+                e_ville  = ec2.text_input("Ville",   value=erow["ville"])
+
+                ec3, ec4 = st.columns(2)
+                e_type  = ec3.selectbox("Type", TYPE_CONTACT,
+                    index=TYPE_CONTACT.index(erow["type_contact"]) if erow["type_contact"] in TYPE_CONTACT else 0)
+                e_statut = ec4.selectbox("Statut", STATUTS,
+                    index=STATUTS.index(erow["statut"]) if erow["statut"] in STATUTS else 0)
+
+                if is_custom_offre:
+                    st.markdown(f"**Prestation :** {erow['offre']}")
+                    e_offre      = OFFRE_CUSTOM
+                    e_custom_nom = erow["offre"]
+                    e_brut       = st.number_input("Montant HT (€)", min_value=0, step=50,
+                                                    value=int(float(erow["montant_brut"])))
+                    e_fms        = False
+                else:
+                    offre_idx = offre_options.index(erow["offre"]) if erow["offre"] in offre_options else 0
+                    e_offre      = st.selectbox("Proposition de valeur", offre_options, index=offre_idx)
+                    e_custom_nom = ""
+                    e_brut       = OFFRES[e_offre]["prix"]
+                    fms_ref      = OFFRES[e_offre]["fms"]
+                    e_fms = st.checkbox(f"Inclure FMS ({fmt_eur(fms_ref)})",
+                                        value=bool(erow.get("fms_inclus", False))) if fms_ref > 0 else False
+
+                temp_list = list(PROBA.keys())
+                e_temp = st.selectbox("Température", temp_list,
+                    index=temp_list.index(erow["temperature"]) if erow["temperature"] in temp_list else 0)
+
+                if is_admin:
+                    users_map_e = get_users()
+                    noms_co_e   = [u["display_name"] for u in users_map_e.values()]
+                    co_idx      = noms_co_e.index(erow["commercial"]) if erow["commercial"] in noms_co_e else 0
+                    e_co        = st.selectbox("Commercial", noms_co_e, index=co_idx)
+                else:
+                    e_co = user["display_name"]
+
+                save_btn = st.form_submit_button("💾 Enregistrer", type="primary", use_container_width=True)
+
+            if save_btn:
+                if is_custom_offre:
+                    offre_label = e_custom_nom
+                    brut        = float(e_brut)
+                    fms_ref_val = 0
+                    e_fms       = False
+                else:
+                    offre_label = e_offre
+                    brut        = float(OFFRES[e_offre]["prix"])
+                    fms_ref_val = OFFRES[e_offre]["fms"]
+
+                fms_montant = fms_ref_val if e_fms else 0
+                total       = brut + fms_montant
+                proba       = PROBA[e_temp]
+                pondere     = round(total * proba, 2)
+
+                update_row(erow_id, {
+                    "client":           e_client.strip(),
+                    "ville":            e_ville.strip(),
+                    "type_contact":     e_type,
+                    "offre":            offre_label,
+                    "statut":           e_statut,
+                    "temperature":      e_temp,
+                    "montant_brut":     brut,
+                    "fms_inclus":       e_fms,
+                    "fms_montant":      fms_montant,
+                    "montant_total":    total,
+                    "probabilite":      int(proba * 100),
+                    "montant_pondere":  pondere,
+                    "commercial":       e_co,
+                })
+                st.success("Modifications enregistrées !")
+                st.rerun()
+
+        st.divider()
+
+        # ── Supprimer ─────────────────────────────────────────────────────────
         st.subheader("Supprimer une opportunité")
 
         if is_admin:
