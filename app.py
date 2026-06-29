@@ -462,6 +462,13 @@ with tab_pipe:
         "Tiède": ("#FAEEDA", "#854F0B"),
         "Froid": ("#E6F1FB", "#185FA5"),
     }
+    TRANSITIONS = {
+        "Premier contact": [("→ Devis",   "Devis présenté")],
+        "Devis présenté":  [("→ Relance", "Relance"), ("✅ Gagné", "Gagné")],
+        "Relance":         [("✅ Gagné",   "Gagné"),  ("❌ Perdu", "Perdu")],
+        "Gagné":           [("↩ Relance", "Relance")],
+        "Perdu":           [("↩ Relance", "Relance")],
+    }
 
     cols_kb = st.columns(5)
     for col_kb, statut in zip(cols_kb, KANBAN_STATUTS):
@@ -485,9 +492,10 @@ with tab_pipe:
                     temp          = row.get("temperature", "Froid")
                     bg_t, color_t = TEMP_BADGE.get(temp, ("#f0f0f0", "#555"))
                     co            = row.get("commercial", "—")
+                    row_id        = int(row["id"])
                     st.markdown(
-                        f'<div style="background:white;border:0.5px solid #e0e0e0;border-radius:10px;'
-                        f'padding:10px 11px;margin-bottom:8px">'
+                        f'<div style="background:white;border:0.5px solid #e0e0e0;'
+                        f'border-radius:10px 10px 0 0;padding:10px 11px 8px 11px">'
                         f'<div style="font-size:13px;font-weight:500;color:#111;margin-bottom:3px">{row["client"]}</div>'
                         f'<div style="font-size:10px;color:#666;margin-bottom:6px">{row["offre"]}</div>'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'
@@ -499,6 +507,15 @@ with tab_pipe:
                         f'</div>',
                         unsafe_allow_html=True,
                     )
+                    transitions = TRANSITIONS.get(statut, [])
+                    if transitions:
+                        btn_cols = st.columns(len(transitions))
+                        for bcol, (label, new_statut) in zip(btn_cols, transitions):
+                            if bcol.button(label, key=f"kb_{row_id}_{new_statut}",
+                                           use_container_width=True):
+                                update_row(row_id, {"statut": new_statut})
+                                st.rerun()
+                    st.markdown("<div style='margin-bottom:10px'></div>", unsafe_allow_html=True)
 
 # ── Onglet Tableau ────────────────────────────────────────────────────────────
 with tab_table:
