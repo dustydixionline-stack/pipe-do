@@ -560,8 +560,9 @@ with tab_table:
             erow_id = int(erow["id"])
             kp      = f"ed_{erow_id}"   # préfixe clé unique par ligne
 
-            is_custom_offre = erow["offre"] not in OFFRES
-            offre_options   = list(OFFRES.keys())
+            offre_options = list(OFFRES.keys())
+            stored_offre  = erow["offre"]
+            default_idx   = offre_options.index(stored_offre) if stored_offre in offre_options else offre_options.index(OFFRE_CUSTOM)
 
             ec1, ec2 = st.columns(2)
             e_client = ec1.text_input("Client", value=erow["client"], key=f"{kp}_client")
@@ -573,18 +574,18 @@ with tab_table:
             e_statut = ec4.selectbox("Statut", STATUTS, key=f"{kp}_statut",
                 index=STATUTS.index(erow["statut"]) if erow["statut"] in STATUTS else 0)
 
-            if is_custom_offre:
-                st.markdown(f"**Prestation :** {erow['offre']}")
-                e_offre      = OFFRE_CUSTOM
-                e_custom_nom = erow["offre"]
+            e_offre = st.selectbox("Proposition de valeur", offre_options,
+                                   index=default_idx, key=f"{kp}_offre")
+
+            if e_offre == OFFRE_CUSTOM:
+                default_nom  = stored_offre if stored_offre not in OFFRES else ""
+                default_prix = int(float(erow["montant_brut"])) if stored_offre not in OFFRES else 0
+                e_custom_nom = st.text_input("Intitulé de la prestation", value=default_nom, key=f"{kp}_custom_nom")
                 e_brut       = st.number_input("Montant HT (€)", min_value=0, step=50,
-                                               value=int(float(erow["montant_brut"])), key=f"{kp}_brut")
+                                               value=default_prix, key=f"{kp}_brut")
                 e_fms        = False
                 fms_ref_val  = 0
             else:
-                offre_idx    = offre_options.index(erow["offre"]) if erow["offre"] in offre_options else 0
-                e_offre      = st.selectbox("Proposition de valeur", offre_options,
-                                            index=offre_idx, key=f"{kp}_offre")
                 e_custom_nom = ""
                 e_brut       = OFFRES[e_offre]["prix"]
                 fms_ref_val  = OFFRES[e_offre]["fms"]
@@ -617,9 +618,16 @@ with tab_table:
             if st.button("💾 Enregistrer les modifications", type="primary",
                          use_container_width=True, key=f"{kp}_save"):
                 try:
-                    offre_label = e_custom_nom if is_custom_offre else e_offre
-                    brut        = float(e_brut) if is_custom_offre else float(OFFRES[e_offre]["prix"])
-                    fms_montant = fms_ref_val if e_fms else 0
+                    if e_offre == OFFRE_CUSTOM:
+                        offre_label = e_custom_nom.strip() or OFFRE_CUSTOM
+                        brut        = float(e_brut)
+                        fms_ref_val = 0
+                        e_fms       = False
+                    else:
+                        offre_label = e_offre
+                        brut        = float(OFFRES[e_offre]["prix"])
+                        fms_ref_val = OFFRES[e_offre]["fms"]
+                    fms_montant = fms_ref_val if (e_fms and e_offre != OFFRE_CUSTOM) else 0
                     total       = brut + fms_montant
                     proba       = PROBA[e_temp]
                     pondere     = round(total * proba, 2)
