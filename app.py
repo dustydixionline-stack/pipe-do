@@ -69,11 +69,20 @@ VILLES = {
 def get_supabase():
     try:
         from supabase import create_client
-        return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-    except Exception:
-        return None
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        client = create_client(url, key)
+        # Test de connexion rapide
+        client.table("pipe_do").select("id").limit(1).execute()
+        return client, None
+    except KeyError as e:
+        return None, f"Secret manquant : {e}"
+    except Exception as e:
+        return None, str(e)
 
-supabase  = get_supabase()
+_supa_result = get_supabase()
+supabase  = _supa_result[0]
+_supa_err = _supa_result[1]
 USE_SUPA  = supabase is not None
 DATA_FILE = os.path.join(os.path.dirname(__file__), "pipe_do.csv")
 COLUMNS   = [
@@ -217,6 +226,8 @@ with h2:
         st.success("☁️ Cloud")
     else:
         st.warning("💾 Local")
+        if _supa_err:
+            st.caption(f"⚠️ {_supa_err}")
     if st.button("Déconnexion", use_container_width=True):
         del st.session_state["user"]
         st.rerun()
