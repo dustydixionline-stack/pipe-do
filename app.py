@@ -173,7 +173,8 @@ def load_data():
 
 def insert_row(row: dict):
     if USE_SUPA:
-        supabase.table("pipe_do").insert({k: v for k, v in row.items() if k != "id"}).execute()
+        payload = {k: v for k, v in row.items() if k != "id" and v is not None}
+        supabase.table("pipe_do").insert(payload).execute()
     else:
         df = load_data()
         row["id"] = int(df["id"].max() + 1) if not df.empty else 1
